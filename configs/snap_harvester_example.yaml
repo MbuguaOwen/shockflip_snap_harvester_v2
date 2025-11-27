@@ -1,0 +1,104 @@
+data:
+  events_path: "results/diamond_hunter/events_annotated.csv"
+  events_time_col: "timestamp"
+  events_symbol_col: "symbol"
+  events_side_col: "side"         # +1 for long, -1 for short
+  events_price_col: "price"       # entry price at ShockFlip
+  events_atr_col: "atr"           # ATR at event time (same units as your k_atr)
+  bars_path_template: "data/minutes/{symbol}_1min.parquet"
+  bars_time_col: "timestamp"
+  bars_open_col: "open"
+  bars_high_col: "high"
+  bars_low_col: "low"
+  bars_close_col: "close"
+  symbols:
+    - "BTCUSDT"
+    - "ETHUSDT"
+
+integrity:
+  tick_timestamp_unit: "ms"     # expected unit for raw tick timestamps
+  max_tick_gap_seconds: 180     # log gaps with no ticks greater than this threshold
+  price_tolerance: 1e-4         # tolerance for price inclusion checks
+  event_snap_minutes: 1         # allow snapping events to +/- this many minutes when aligning to bars
+  drop_misaligned_events: false # if true, drop events whose entry price cannot be aligned to a bar
+  max_risk_to_price_ratio: 5.0  # sanity check on ATR scale vs price
+
+risk_presets:
+  geometry:         # MFE/MAE study, no BE/TP
+    risk_k_atr: 0.5
+    be_k_atr: 0.0
+    tp_k_atr: 999.5
+    horizon_bars: 120
+    target_r_multiple: 3.0
+  strategy:         # Snap Harvester production geometry
+    risk_k_atr: 0.5
+    sl_r_multiple: 2.5   # SL at -2.5R (R = risk_k_atr*ATR)
+    tp_r_multiple: 4.0   # TP at +4R
+    be_r_multiple: 1.0   # optional: BE after +1R; set to 0 to disable
+    be_k_atr: 0.0        # ignored when be_r_multiple is set
+    tp_k_atr: 0.0        # ignored when tp_r_multiple is set
+    horizon_bars: 30
+    target_r_multiple: 4.0
+
+active_risk_profile: "strategy"
+
+# Effective risk block used by the scripts (overridden when --risk-profile is passed)
+risk:
+  risk_k_atr: 0.5
+  sl_r_multiple: 2.5
+  tp_r_multiple: 4.0
+  be_r_multiple: 1.0
+  be_k_atr: 0.0
+  tp_k_atr: 0.0
+  horizon_bars: 30
+  target_r_multiple: 4.0
+
+meta:
+  label_col: "y_swing_1p5"
+  r_multiple_col: "r_final"
+  mfe_col: "mfe_r"
+  mae_col: "mae_r"
+  # Anything listed here will never be used as a feature
+  exclude_feature_cols:
+    - "event_id"
+    - "event_bar_time"
+    - "event_bar_offset_min"
+    - "exit_time"
+    - "hit_be"
+    - "hit_tp"
+    - "hit_sl"
+    - "p_hat"
+    - "risk_profile"
+  max_category_cardinality: 20
+
+train:
+  train_start: "2025-01-01"
+  train_end: "2025-05-31"
+  oos_start: "2025-06-01"
+  oos_end: "2025-07-31"
+
+model:
+  type: "hgb"
+  params:
+    max_depth: 6
+    max_iter: 500
+    learning_rate: 0.05
+    min_samples_leaf: 30
+    l2_regularization: 0.1
+    validation_fraction: 0.1
+    n_iter_no_change: 10
+    random_state: 42
+
+eval:
+  prob_thresholds:
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+
+paths:
+  meta_out: "results/meta/snap_meta_events.csv"
+  model_out: "results/models/hgb_snap_1p5.joblib"
+  meta_with_preds_out: "results/meta/snap_meta_with_p_hat.csv"
+  metrics_out: "results/meta/snap_meta_metrics.json"
+  backtest_summary_out: "results/backtest/snap_backtest_summary.json"
