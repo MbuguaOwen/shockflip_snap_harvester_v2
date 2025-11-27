@@ -1,5 +1,9 @@
 # Ignore only tick CSV files
 /data/ticks/**/*.csv
+# Ignore any renamed/parked tick files
+/data/ticks/**/*.skip
+# Ignore parquet artifacts (minutes, intermediates)
+*.parquet
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -29,4 +33,9 @@ env/
 venv/
 ENV/
 env.bak/
-/results/
+# Results: ignore everything except models
+/results/*
+!/results/models/
+!/results/models/**
+!/results/.gitkeep
+/raw/

@@ -20,7 +20,8 @@ integrity:
   max_tick_gap_seconds: 180     # log gaps with no ticks greater than this threshold
   price_tolerance: 1e-4         # tolerance for price inclusion checks
   event_snap_minutes: 1         # allow snapping events to +/- this many minutes when aligning to bars
-  drop_misaligned_events: false # if true, drop events whose entry price cannot be aligned to a bar
+  drop_misaligned_events: true  # drop events whose entry price cannot be aligned to a bar
+  log_misaligned_events: true   # log any dropped misaligned events
   max_risk_to_price_ratio: 5.0  # sanity check on ATR scale vs price
 
 risk_presets:
