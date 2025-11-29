@@ -1,0 +1,100 @@
+experiment:
+  name: snap_harvester_2025_btc
+  seed: 42
+
+data:
+  symbols:
+    - "BTCUSDT"
+
+  bars_path_template: "data/minutes/{symbol}_1min.parquet"
+  bars_time_col: "timestamp"
+  bars_open_col: "open"
+  bars_high_col: "high"
+  bars_low_col: "low"
+  bars_close_col: "close"
+
+  events_path: "results/meta/snap_meta_events_2025_BTC_JanJul.csv"
+  events_time_col: "timestamp"
+  events_symbol_col: "symbol"
+  events_side_col: "side"
+  events_price_col: "close"       # using close as entry price
+  events_atr_col: "atr"
+
+paths:
+  meta_out: "results/meta/snap_meta_dataset_2025_BTC.csv"
+  meta_with_preds_out: "results/meta/snap_meta_with_p_hat_2025_BTC.csv"
+  model_out: "results/models/hgb_snap_2025_BTC.joblib"   # unused for OOS apply
+  metrics_out: "results/meta/snap_meta_metrics_2025_BTC.json"
+  backtest_summary_out: "results/backtest/snap_backtest_summary_2025_BTC.json"
+
+integrity:
+  price_tolerance: 1e-4
+  event_snap_minutes: 1
+  drop_misaligned_events: true
+  log_misaligned_events: true
+  max_risk_to_price_ratio: 5.0
+
+risk_presets:
+  strategy:
+    risk_k_atr: 0.5
+    sl_r_multiple: 2.5
+    tp_r_multiple: 4.0
+    be_r_multiple: 1.0
+    be_k_atr: 0.0
+    tp_k_atr: 0.0
+    horizon_bars: 30
+    target_r_multiple: 4.0
+
+active_risk_profile: "strategy"
+
+risk:
+  risk_k_atr: 0.5
+  sl_r_multiple: 2.5
+  tp_r_multiple: 4.0
+  be_r_multiple: 1.0
+  be_k_atr: 0.0
+  tp_k_atr: 0.0
+  horizon_bars: 30
+  target_r_multiple: 4.0
+
+meta:
+  label_col: "y_swing_1p5"
+  r_multiple_col: "r_final"
+  mfe_col: "mfe_r"
+  mae_col: "mae_r"
+  exclude_feature_cols:
+    - "event_id"
+    - "event_bar_time"
+    - "event_bar_offset_min"
+    - "exit_time"
+    - "hit_be"
+    - "hit_tp"
+    - "hit_sl"
+    - "p_hat"
+    - "risk_profile"
+  max_category_cardinality: 20
+
+train:
+  train_start: "2025-01-01"
+  train_end: "2025-07-31"
+  oos_start: "2026-01-01"
+  oos_end: "2026-12-31"
+
+model:
+  type: "hgb"
+  params:
+    max_depth: 6
+    max_iter: 500
+    learning_rate: 0.05
+    min_samples_leaf: 30
+    l2_regularization: 0.1
+    validation_fraction: 0.1
+    n_iter_no_change: 10
+    random_state: 42
+
+eval:
+  prob_thresholds:
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6

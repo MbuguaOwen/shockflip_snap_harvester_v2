@@ -18,6 +18,7 @@ from snap_harvester.integrity import (
     validate_minute_bars,
 )
 from snap_harvester.logging_utils import get_logger
+from snap_harvester.utils.ticks import get_tick_size, price_to_tick, tick_to_price
 
 
 ALIAS_GROUPS = {
@@ -58,6 +59,7 @@ def _aggregate_file(
     unit: str,
     logger,
     chunksize: int = 5_000_000,
+    tick_size: float | None = None,
 ) -> pd.DataFrame:
     """Stream and aggregate one tick CSV into minute bars."""
     usecols, dtype_map, rename_map = _detect_usecols(path)
@@ -112,10 +114,16 @@ def _aggregate_file(
         if "qty" in chunk.columns:
             chunk["qty"] = pd.to_numeric(chunk["qty"], errors="coerce")
 
+        if tick_size is not None:
+            chunk["tick"] = chunk["price"].apply(lambda p: price_to_tick(p, tick_size))
+            chunk["price"] = chunk["tick"].apply(lambda t: tick_to_price(t, tick_size))
+
         chunk = chunk.dropna(subset=["timestamp", "price"])
         chunk = chunk.sort_values("timestamp")
 
         dedup_subset = [c for c in ["timestamp", "price", "qty", "is_buyer_maker"] if c in chunk.columns]
+        if tick_size is not None and "tick" in chunk.columns:
+            dedup_subset.append("tick")
         before = len(chunk)
         if dedup_subset:
             chunk = chunk.drop_duplicates(subset=dedup_subset)
@@ -154,6 +162,7 @@ def build_minutes_from_paths(
     price_tolerance: float,
     max_gap_seconds: float,
     logger,
+    tick_size: float | None = None,
 ) -> pd.DataFrame:
     if not paths:
         raise FileNotFoundError("No tick files matched the provided glob")
@@ -161,7 +170,7 @@ def build_minutes_from_paths(
     frames = []
     for p in tqdm(paths, desc="Aggregating tick files"):
         try:
-            frames.append(_aggregate_file(p, unit, logger=logger))
+            frames.append(_aggregate_file(p, unit, logger=logger, tick_size=tick_size))
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(f"Failed while processing tick file {p}") from exc
 
@@ -236,6 +245,12 @@ def parse_args() -> argparse.Namespace:
         default=1e-6,
         help="Tolerance for OHLC integrity checks.",
     )
+    parser.add_argument(
+        "--tick_size",
+        type=float,
+        default=None,
+        help="Override tick size (default: look up from symbol).",
+    )
     return parser.parse_args()
 
 
@@ -254,12 +269,22 @@ def main() -> None:
         ts_unit = infer_timestamp_unit_from_values(sample["timestamp"])
         logger.info("Inferred timestamp unit '%s' from sample %s", ts_unit, tick_paths[0])
 
+    tick_size = args.tick_size
+    if tick_size is None:
+        try:
+            tick_size = get_tick_size(args.symbol)
+        except KeyError as exc:
+            raise SystemExit(str(exc)) from exc
+
+    logger.info("Using tick size %.10g for %s", tick_size, args.symbol)
+
     ohlc = build_minutes_from_paths(
         tick_paths,
         unit=ts_unit,
         price_tolerance=args.price_tolerance,
         max_gap_seconds=args.max_gap_seconds,
         logger=logger,
+        tick_size=tick_size,
     )
 
     out_path = Path(args.out)

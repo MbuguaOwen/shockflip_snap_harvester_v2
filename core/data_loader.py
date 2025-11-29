@@ -1,11 +1,13 @@
 import os
 import sys
 import pandas as pd
-from typing import List, Generator, Tuple
+from typing import List, Generator, Tuple, Optional
 
 # Fix path to allow imports from core
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(ROOT)
+
+from snap_harvester.utils.ticks import get_tick_size, price_to_tick, tick_to_price
 
 # ----------------------------------------------------------------------
 # File Listing & Robust Parsing
@@ -111,14 +113,28 @@ def _load_single_tick_csv(path: str) -> pd.DataFrame:
     return df
 
 
-def resample_ticks_to_bars(ticks: pd.DataFrame, timeframe: str = "1min") -> pd.DataFrame:
+def resample_ticks_to_bars(
+    ticks: pd.DataFrame,
+    timeframe: str = "1min",
+    symbol: Optional[str] = None,
+    tick_size: Optional[float] = None,
+) -> pd.DataFrame:
     """
     Aggregate ticks into OHLCV bars with buy/sell volume.
     """
     if ticks.empty:
         return pd.DataFrame()
 
-    df = ticks.set_index("ts")
+    resolved_tick = tick_size
+    if resolved_tick is None and symbol:
+        resolved_tick = get_tick_size(symbol)
+
+    df = ticks.copy()
+    if resolved_tick is not None:
+        df["tick"] = df["price"].apply(lambda p: price_to_tick(p, resolved_tick))
+        df["price"] = df["tick"].apply(lambda t: tick_to_price(t, resolved_tick))
+
+    df = df.set_index("ts")
 
     ohlc = df["price"].resample(timeframe).ohlc()
     vol = df["qty"].resample(timeframe).sum().rename("volume")
@@ -187,7 +203,13 @@ def stream_ticks_from_dir(tick_dir: str, chunk_days: int = 7) -> Generator[pd.Da
 # Convenience Loader
 # ----------------------------------------------------------------------
 
-def load_marketdata_as_bars(tick_dir: str, timeframe: str = "1min", chunk_days: int = 10) -> Tuple[pd.DataFrame, str]:
+def load_marketdata_as_bars(
+    tick_dir: str,
+    timeframe: str = "1min",
+    chunk_days: int = 10,
+    symbol: Optional[str] = None,
+    tick_size: Optional[float] = None,
+) -> Tuple[pd.DataFrame, str]:
     """
     Stream ticks from a directory and return a single bars DataFrame.
     Returns (bars_df, source_label).
@@ -196,7 +218,12 @@ def load_marketdata_as_bars(tick_dir: str, timeframe: str = "1min", chunk_days: 
     for tick_chunk in stream_ticks_from_dir(tick_dir, chunk_days=chunk_days):
         if tick_chunk is None or tick_chunk.empty:
             continue
-        bars = resample_ticks_to_bars(tick_chunk, timeframe=timeframe)
+        bars = resample_ticks_to_bars(
+            tick_chunk,
+            timeframe=timeframe,
+            symbol=symbol,
+            tick_size=tick_size,
+        )
         if bars.empty:
             continue
         bar_chunks.append(bars)

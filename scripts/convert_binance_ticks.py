@@ -15,6 +15,7 @@ import argparse
 import pandas as pd
 from typing import List
 
+from snap_harvester.utils.ticks import get_tick_size, price_to_tick, tick_to_price
 
 def _column_names(mode: str) -> List[str]:
     if mode == "trades":
@@ -41,7 +42,7 @@ def _column_names(mode: str) -> List[str]:
     raise ValueError("mode must be 'trades' or 'aggtrades'")
 
 
-def _clean_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
+def _clean_chunk(chunk: pd.DataFrame, tick_size: float | None = None) -> pd.DataFrame:
     out = chunk[["timestamp", "price", "qty", "is_buyer_maker"]].copy()
     out["timestamp"] = pd.to_numeric(out["timestamp"], errors="coerce").astype("Int64")
     out["price"] = pd.to_numeric(out["price"], errors="coerce").astype("float64")
@@ -55,16 +56,25 @@ def _clean_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
         .fillna(0)
         .astype("int8")
     )
+    if tick_size is not None:
+        out["tick"] = out["price"].apply(lambda p: price_to_tick(p, tick_size))
+        out["price"] = out["tick"].apply(lambda t: tick_to_price(t, tick_size))
     return out.dropna(subset=["timestamp", "price", "qty"])
 
 
-def convert(in_path: str, out_path: str, mode: str, chunksize: int = 1_000_000) -> None:
+def convert(
+    in_path: str,
+    out_path: str,
+    mode: str,
+    chunksize: int = 1_000_000,
+    tick_size: float | None = None,
+) -> None:
     cols = _column_names(mode)
     first = True
     total = 0
 
     for chunk in pd.read_csv(in_path, header=None, names=cols, chunksize=chunksize):
-        cleaned = _clean_chunk(chunk)
+        cleaned = _clean_chunk(chunk, tick_size=tick_size)
         cleaned.to_csv(out_path, mode="w" if first else "a", header=first, index=False)
         total += len(cleaned)
         first = False
@@ -78,8 +88,21 @@ def main():
     ap.add_argument("--out_path", required=True, help="Output CSV path (timestamp,price,qty,is_buyer_maker).")
     ap.add_argument("--mode", choices=["trades", "aggtrades"], required=True, help="Input file schema.")
     ap.add_argument("--chunksize", type=int, default=1_000_000, help="Rows per chunk when streaming large files.")
+    ap.add_argument("--symbol", help="Symbol name (e.g., BTCUSDT) to apply canonical tick grid.")
+    ap.add_argument(
+        "--tick_size",
+        type=float,
+        default=None,
+        help="Optional tick size override; if absent, derived from --symbol.",
+    )
     args = ap.parse_args()
-    convert(args.in_path, args.out_path, args.mode, chunksize=args.chunksize)
+    resolved_tick = args.tick_size
+    if resolved_tick is None and args.symbol:
+        try:
+            resolved_tick = get_tick_size(args.symbol)
+        except KeyError as exc:
+            raise SystemExit(str(exc)) from exc
+    convert(args.in_path, args.out_path, args.mode, chunksize=args.chunksize, tick_size=resolved_tick)
 
 
 if __name__ == "__main__":

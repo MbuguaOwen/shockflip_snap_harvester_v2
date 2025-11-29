@@ -21,6 +21,7 @@ sys.path.append(ROOT)
 from core.data_loader import stream_ticks_from_dir, resample_ticks_to_bars
 from core.features import add_core_features, add_hypothesis_features
 from core.shockflip_detector import ShockFlipConfig, detect_shockflip_signals
+from snap_harvester.utils.ticks import get_tick_size
 
 EPS = 1e-9
 DEFAULT_HORIZONS = [6, 10, 20, 30, 60, 120, 240]
@@ -318,11 +319,20 @@ def main():
 
     cfg_overrides = {"z_band": args.z_band, "jump_band": args.jump_band, "persistence": args.persistence}
     all_events: list[dict] = []
-    symbol = os.path.basename(os.path.abspath(args.tick_dir))
+    symbol = os.path.basename(os.path.abspath(args.tick_dir)).upper()
+    try:
+        tick_size = get_tick_size(symbol)
+    except KeyError as exc:
+        raise SystemExit(str(exc)) from exc
 
     print(f"Diamond Hunter v2.4 running on {args.tick_dir}...")
     for tick_chunk in stream_ticks_from_dir(args.tick_dir, chunk_days=10):
-        bars = resample_ticks_to_bars(tick_chunk, timeframe="1min")
+        bars = resample_ticks_to_bars(
+            tick_chunk,
+            timeframe="1min",
+            symbol=symbol,
+            tick_size=tick_size,
+        )
         if len(bars) < 240:
             continue
         events = get_chunk_events(bars, cfg_overrides, symbol=symbol, horizons=horizons)
