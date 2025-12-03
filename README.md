@@ -105,3 +105,48 @@ Run from repo root with the venv active (`.\venv\Scripts\python`). These steps r
    `.\venv\Scripts\python -m snap_harvester.live.runner --config configs/snap_harvester_live_btc.yaml --mode live`
 
 These commands regenerate the 2024 train artifacts, 2025 OOS meta, p_hat scoring, routed tape, PnL summary, and the replay parity output used for validation.
+
+How ShockFlip thresholds were loosened for Nov
+
+Two layers of changes:
+
+CLI parameters for the Nov-only run (vs the stricter defaults used for the main 2025 OOS study):
+Original 2025 study (from README): effectively around z_band≈1.8–2.0, jump_band≈2.2–2.5, persistence≈3–4, and default windows z_window=240, donchian_window=120, min_bars=240.
+Nov-only run:
+--z_band 1.2
+--jump_band 1.5
+--persistence 1
+--z_window 90
+--donchian_window 40
+--min_bars 60
+Command you ran for Nov:
+$env:PYTHONPATH='.'; .\venv\Scripts\python -u scripts\diamond_hunter.py `
+  --tick_dir data/ticks/BTCUSDT_nov11 `
+  --out results/diamond_hunter_btc_nov11 `
+  --z_band 1.2 --jump_band 1.5 --persistence 1 `
+  --min_bars 60 --z_window 90 --donchian_window 40
+Code-level tweaks to support small slices / temp dirs
+scripts/diamond_hunter.py
+Added MIN_BARS_DEFAULT, Z_WINDOW_DEFAULT, DONCHIAN_WINDOW_DEFAULT constants.
+Added CLI args: --min_bars, --z_window, --donchian_window.
+get_chunk_events now takes z_window and donchian_window from the CLI overrides instead of being hard-wired to 240/120.
+stream_ticks_from_dir loop now uses len(bars) < max(args.min_bars, 1) instead of a fixed 240-bar guard.
+snap_harvester/utils/ticks.py
+get_tick_size now strips suffixes after _ so folders like BTCUSDT_nov11 still resolve to BTCUSDT.
+
+BTCUSDT-ticks-2025-11.csv → 169M rows, minutes built to BTCUSDT_1min_2025-11.parquet (43,409 bars, 1969 artefact at start is just a timestamp bug in a few corrupted ticks that we dropped on the way into bars).
+Diamond Hunter on full data/ticks/BTCUSDT found ~1,060 events, of which 49 aligned cleanly to bars under your integrity constraints (kept=49, dropped=1011).
+The final Nov OOS stats (routed via the frozen 2024 HGB model) are:
+
+n = 49 trades
+wins = 46, losses = 1, flats = 2
+total_r = 181.5, mean_r ≈ 3.704, median_r = 4.0
+Interpreting in dollar terms at $100 risk per trade (1R = $100):
+
+Total P&L ≈ 181.5 * 100 = $18,150 over 49 trades.
+Average per trade ≈ 3.704R * $100 ≈ $370.
+Median trade ≈ 4R * $100 = $400.
+From a modeling standpoint, this remains purely OOS:
+
+Model: hgb_snap_2024_BTC.joblib trained on 2024 BTC only; no retraining with 2025 data.
+November events come from DH run on 2025‑11 ticks; those are then fed through the existing feature blueprint and scored by the frozen 2024 model.

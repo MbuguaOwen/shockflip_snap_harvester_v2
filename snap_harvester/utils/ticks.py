@@ -19,10 +19,16 @@ def get_tick_size(symbol: str) -> float:
     KeyError if the symbol is unknown.
     """
     sym = symbol.upper()
-    if sym not in SYMBOL_TICK_SIZE:
-        known = ", ".join(sorted(SYMBOL_TICK_SIZE))
-        raise KeyError(f"Tick size for symbol '{symbol}' not configured. Known: {known}")
-    return SYMBOL_TICK_SIZE[sym]
+    if sym in SYMBOL_TICK_SIZE:
+        return SYMBOL_TICK_SIZE[sym]
+
+    # Allow folder/name aliases like BTCUSDT_NOV11 by stripping suffix after "_"
+    base_sym = sym.split("_", 1)[0]
+    if base_sym in SYMBOL_TICK_SIZE:
+        return SYMBOL_TICK_SIZE[base_sym]
+
+    known = ", ".join(sorted(SYMBOL_TICK_SIZE))
+    raise KeyError(f"Tick size for symbol '{symbol}' not configured. Known: {known}")
 
 
 def price_to_tick(price: float, tick_size: float) -> int:

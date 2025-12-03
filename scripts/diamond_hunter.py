@@ -28,6 +28,9 @@ DEFAULT_HORIZONS = [6, 10, 20, 30, 60, 120, 240]
 SNAP_THRESHOLDS_ATR = [0.5, 0.75, 1.0]
 # Barrier label specs: list of (horizon, tp_r, sl_r)
 BARRIER_SPECS = [(30, 3.0, 0.5)]
+MIN_BARS_DEFAULT = 240
+Z_WINDOW_DEFAULT = 240
+DONCHIAN_WINDOW_DEFAULT = 120
 
 
 def _compute_rel_vol(df: pd.DataFrame, window: int = 60) -> pd.Series:
@@ -173,13 +176,13 @@ def get_chunk_events(bars: pd.DataFrame, cfg_overrides: dict, symbol: str, horiz
     """Extract annotated ShockFlip events from a bars chunk."""
     sf_cfg = ShockFlipConfig(
         source="imbalance",
-        z_window=240,
+        z_window=cfg_overrides["z_window"],
         z_band=cfg_overrides["z_band"],
         jump_band=cfg_overrides["jump_band"],
         persistence_bars=cfg_overrides["persistence"],
         persistence_ratio=0.5,
         dynamic_thresholds={"enabled": False},
-        location_filter={"donchian_window": 120, "require_extreme": True},
+        location_filter={"donchian_window": cfg_overrides["donchian_window"], "require_extreme": True},
     )
 
     feats = build_features(bars, sf_cfg)
@@ -297,8 +300,26 @@ def main():
     p.add_argument("--tick_dir", required=True, help="Tick data directory (expects CSVs).")
     p.add_argument("--out", required=True, help="Output directory (events_annotated.csv, diamond_candidates.csv).")
     p.add_argument("--z_band", type=float, default=2.0)
+    p.add_argument(
+        "--z_window",
+        type=int,
+        default=Z_WINDOW_DEFAULT,
+        help=f"Z-score window for shockflip detection (default: {Z_WINDOW_DEFAULT}).",
+    )
     p.add_argument("--jump_band", type=float, default=2.5)
     p.add_argument("--persistence", type=int, default=4)
+    p.add_argument(
+        "--donchian_window",
+        type=int,
+        default=DONCHIAN_WINDOW_DEFAULT,
+        help=f"Donchian window for location filter (default: {DONCHIAN_WINDOW_DEFAULT}).",
+    )
+    p.add_argument(
+        "--min_bars",
+        type=int,
+        default=MIN_BARS_DEFAULT,
+        help=f"Minimum number of 1m bars required to run detection (default: {MIN_BARS_DEFAULT}).",
+    )
     p.add_argument(
         "--horizons",
         type=str,
@@ -317,7 +338,13 @@ def main():
     if not horizons:
         horizons = DEFAULT_HORIZONS
 
-    cfg_overrides = {"z_band": args.z_band, "jump_band": args.jump_band, "persistence": args.persistence}
+    cfg_overrides = {
+        "z_band": args.z_band,
+        "z_window": args.z_window,
+        "jump_band": args.jump_band,
+        "persistence": args.persistence,
+        "donchian_window": args.donchian_window,
+    }
     all_events: list[dict] = []
     symbol = os.path.basename(os.path.abspath(args.tick_dir)).upper()
     try:
@@ -333,7 +360,7 @@ def main():
             symbol=symbol,
             tick_size=tick_size,
         )
-        if len(bars) < 240:
+        if len(bars) < max(args.min_bars, 1):
             continue
         events = get_chunk_events(bars, cfg_overrides, symbol=symbol, horizons=horizons)
         all_events.extend(events)

@@ -66,10 +66,10 @@ def _aggregate_file(
 
     chunk_aggs = []
     dup_removed = 0
+    # Read as-is, then coerce to numeric downstream to avoid dtype conversion errors
     for chunk in pd.read_csv(
         path,
         usecols=usecols,
-        dtype=dtype_map,
         low_memory=False,
         chunksize=chunksize,
     ):
@@ -85,15 +85,33 @@ def _aggregate_file(
         chunk = chunk.dropna(subset=["timestamp", "price"])
 
         ts = chunk["timestamp"]
-        if pd.api.types.is_integer_dtype(ts) or pd.api.types.is_float_dtype(ts):
-            ts_int = pd.to_numeric(ts, errors="coerce").astype("Int64")
-            if ts_int.isna().any():
-                raise ValueError(f"{path}: numeric timestamp parse failed for some rows")
-            chunk["timestamp"] = to_utc(
-                ts_int.astype("int64"),
-                unit=unit,
-                name=f"{path}::timestamp",
-            )
+
+        # Prefer numeric parsing (covers ints-as-strings) and then convert to UTC.
+        # We avoid strict to_utc() here so that a tiny number of bad rows
+        # (e.g., corrupt timestamps) are dropped instead of aborting the job.
+        ts_num = pd.to_numeric(ts, errors="coerce")
+        if ts_num.notna().any():
+            mask = ts_num.notna()
+            valid = ts_num[mask].astype("int64")
+            parsed = pd.to_datetime(valid, unit=unit, utc=True, errors="coerce")
+            bad_parsed = parsed.isna()
+            if bad_parsed.any():
+                # Drop rows where even numeric->datetime failed
+                bad_mask = mask.copy()
+                bad_mask[mask] = bad_parsed.values
+                logger.warning(
+                    "%s::timestamp: dropping %d rows with invalid datetime after numeric parse (examples: %s)",
+                    path,
+                    int(bad_mask.sum()),
+                    ts[bad_mask].head(3).tolist(),
+                )
+                mask = mask & (~bad_parsed.values)
+                parsed = parsed[~bad_parsed]
+                if not mask.any():
+                    continue
+            # Align parsed back to filtered chunk
+            chunk = chunk.loc[mask].copy()
+            chunk.loc[:, "timestamp"] = parsed.values
         else:
             parsed = pd.to_datetime(ts, utc=True, errors="coerce")
             bad = parsed.isna()
@@ -118,6 +136,8 @@ def _aggregate_file(
             chunk["tick"] = chunk["price"].apply(lambda p: price_to_tick(p, tick_size))
             chunk["price"] = chunk["tick"].apply(lambda t: tick_to_price(t, tick_size))
 
+        # Ensure timestamp is proper datetime64[ns, UTC] before using .dt
+        chunk["timestamp"] = pd.to_datetime(chunk["timestamp"], utc=True, errors="coerce")
         chunk = chunk.dropna(subset=["timestamp", "price"])
         chunk = chunk.sort_values("timestamp")
 
