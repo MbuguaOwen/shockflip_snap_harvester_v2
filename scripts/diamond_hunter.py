@@ -27,7 +27,8 @@ EPS = 1e-9
 DEFAULT_HORIZONS = [6, 10, 20, 30, 60, 120, 240]
 SNAP_THRESHOLDS_ATR = [0.5, 0.75, 1.0]
 # Barrier label specs: list of (horizon, tp_r, sl_r)
-BARRIER_SPECS = [(30, 3.0, 0.5)]
+# Current choice: 30-bar horizon, TP = +4.0R, SL = -2.5R (TP wins ties)
+BARRIER_SPECS = [(30, 4.0, 2.5)]
 MIN_BARS_DEFAULT = 240
 Z_WINDOW_DEFAULT = 240
 DONCHIAN_WINDOW_DEFAULT = 120
@@ -299,6 +300,7 @@ def main():
     p = argparse.ArgumentParser(description="Diamond Hunter v2.4 – ShockFlip event annotator.")
     p.add_argument("--tick_dir", required=True, help="Tick data directory (expects CSVs).")
     p.add_argument("--out", required=True, help="Output directory (events_annotated.csv, diamond_candidates.csv).")
+    p.add_argument("--symbol", help="Optional symbol override (e.g., BTCUSDT). Defaults to upper-case of tick_dir basename.")
     p.add_argument("--z_band", type=float, default=2.0)
     p.add_argument(
         "--z_window",
@@ -346,7 +348,7 @@ def main():
         "donchian_window": args.donchian_window,
     }
     all_events: list[dict] = []
-    symbol = os.path.basename(os.path.abspath(args.tick_dir)).upper()
+    symbol = args.symbol.upper() if args.symbol else os.path.basename(os.path.abspath(args.tick_dir)).upper()
     try:
         tick_size = get_tick_size(symbol)
     except KeyError as exc:

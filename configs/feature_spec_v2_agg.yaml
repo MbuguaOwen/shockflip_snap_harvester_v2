@@ -1,0 +1,121 @@
+# Canonical v2 feature universe for aggTrades world (research + live).
+# This is a reference spec; wire feature_cols / train_features into the
+# runtime config you use for training and live inference.
+modeling:
+  feature_groups:
+    price_context:
+      - side
+      - close
+      - range_atr
+      - atr
+      - atr_pct
+      - donchian_loc
+
+    flow_shock:
+      - imbalance_z
+      - shockflip_z
+      - shock_intensity_z
+      - rel_vol
+      - price_flow_div
+      - prior_flow_sign
+      - div_score
+
+    trend_regime:
+      - trend_dir
+      - trend_aligned
+      - trend_slope_fast
+      - trend_slope_slow
+      - trend_slope_ratio
+
+    build_up_accel:
+      - flow_signed_vol_5
+      - flow_signed_vol_20
+      - flow_accel_5_20
+      - rel_vol_trend_10
+      - shock_intensity_trend_10
+      - imbalance_z_delta_5
+
+    location_stall:
+      - stall_flag
+      - preflip_range_atr
+      - preflip_rel_vol
+
+    time_structure:
+      - time_since_last_flip_sec
+      - flips_in_last_60min
+      - bar_index_in_session_norm
+
+  # Live-safe feature list to use in configs:
+  train_features:
+    - side
+    - close
+    - range_atr
+    - atr
+    - atr_pct
+    - donchian_loc
+    - imbalance_z
+    - shockflip_z
+    - shock_intensity_z
+    - rel_vol
+    - price_flow_div
+    - prior_flow_sign
+    - div_score
+    - trend_dir
+    - trend_aligned
+    - trend_slope_fast
+    - trend_slope_slow
+    - trend_slope_ratio
+    - flow_signed_vol_5
+    - flow_signed_vol_20
+    - flow_accel_5_20
+    - rel_vol_trend_10
+    - shock_intensity_trend_10
+    - imbalance_z_delta_5
+    - stall_flag
+    - preflip_range_atr
+    - preflip_rel_vol
+    - time_since_last_flip_sec
+    - flips_in_last_60min
+    - bar_index_in_session_norm
+
+  # Diagnostics-only; keep in meta for analysis, never in train_features or live model input.
+  diagnostics_only_features:
+    # Forward path quality (research only)
+    - mfe_H6_atr
+    - mfe_H10_atr
+    - mfe_H20_atr
+    - mfe_H30_atr
+    - mfe_H60_atr
+    - mfe_H120_atr
+    - mfe_H240_atr
+
+    # Multi-barrier snap labels (research only)
+    - snap_H6_K0_5
+    - snap_H6_K0_75
+    - snap_H6_K1_0
+    - snap_H10_K0_5
+    - snap_H10_K0_75
+    - snap_H10_K1_0
+    - snap_H20_K0_5
+    - snap_H20_K0_75
+    - snap_H20_K1_0
+    - snap_H30_K0_5
+    - snap_H30_K0_75
+    - snap_H30_K1_0
+    - snap_H60_K0_5
+    - snap_H60_K0_75
+    - snap_H60_K1_0
+    - snap_H120_K0_5
+    - snap_H120_K0_75
+    - snap_H120_K1_0
+    - snap_H240_K0_5
+    - snap_H240_K0_75
+    - snap_H240_K1_0
+
+    # Barrier path outcome (research only)
+    - barrier_y_H30_R3p0_sl0p5
+
+    # Full-sample deciles (keep out of live; optionally replace with rolling ranks)
+    - shock_intensity_z_fullsample_decile
+    - div_score_fullsample_decile
+    - rel_vol_fullsample_decile

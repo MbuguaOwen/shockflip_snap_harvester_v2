@@ -1,0 +1,166 @@
+experiment:
+  name: snap_harvester_2024_btc_agg
+  seed: 42
+
+data:
+  symbols:
+    - "BTCUSDT"
+
+  bars_path_template: "data/minutes_agg/{symbol}_1min_2024-*.parquet"
+  bars_time_col: "timestamp"
+  bars_open_col: "open"
+  bars_high_col: "high"
+  bars_low_col: "low"
+  bars_close_col: "close"
+
+  events_path: "results/diamond_hunter_btc_agg_2024_*/events_annotated.csv"
+  events_time_col: "timestamp"
+  events_symbol_col: "symbol"
+  events_side_col: "side"
+  events_price_col: "close"
+  events_atr_col: "atr"
+
+paths:
+  meta_out: "results/meta/snap_meta_dataset_2024_BTC_agg.csv"
+  meta_with_preds_out: "results/meta/snap_meta_with_p_hat_2024_BTC_agg.csv"
+  model_out: "results/models/hgb_snap_2024_BTC_agg.joblib"
+  metrics_out: "results/meta/snap_meta_metrics_2024_BTC_agg.json"
+  backtest_summary_out: "results/backtest/snap_backtest_summary_2024_BTC_agg.json"
+
+integrity:
+  price_tolerance: 1e-4
+  event_snap_minutes: 1
+  drop_misaligned_events: true
+  log_misaligned_events: true
+  max_risk_to_price_ratio: 5.0
+
+risk_presets:
+  strategy:
+    risk_k_atr: 0.5
+    sl_r_multiple: 2.5
+    tp_r_multiple: 4.0
+    be_r_multiple: 1.0
+    be_k_atr: 0.0
+    tp_k_atr: 0.0
+    horizon_bars: 30
+    target_r_multiple: 4.0
+
+active_risk_profile: "strategy"
+
+risk:
+  risk_k_atr: 0.5
+  sl_r_multiple: 2.5
+  tp_r_multiple: 4.0
+  be_r_multiple: 1.0
+  be_k_atr: 0.0
+  tp_k_atr: 0.0
+  horizon_bars: 30
+  target_r_multiple: 4.0
+
+meta:
+  label_col: "y_swing_1p5"
+  r_multiple_col: "r_final"
+  mfe_col: "mfe_r"
+  mae_col: "mae_r"
+  exclude_feature_cols:
+    - "event_id"
+    - "event_bar_time"
+    - "event_bar_offset_min"
+    - "exit_time"
+    - "hit_be"
+    - "hit_tp"
+    - "hit_sl"
+    - "p_hat"
+    - "risk_profile"
+  max_category_cardinality: 20
+
+  train_features:
+    - side
+    - close
+    - range_atr
+    - atr
+    - atr_pct
+    - donchian_loc
+    - imbalance_z
+    - shockflip_z
+    - shock_intensity_z
+    - rel_vol
+    - price_flow_div
+    - prior_flow_sign
+    - div_score
+    - trend_dir
+    - trend_aligned
+    - trend_slope_fast
+    - trend_slope_slow
+    - trend_slope_ratio
+    - flow_signed_vol_5
+    - flow_signed_vol_20
+    - flow_accel_5_20
+    - rel_vol_trend_10
+    - shock_intensity_trend_10
+    - imbalance_z_delta_5
+    - stall_flag
+    - preflip_range_atr
+    - preflip_rel_vol
+    - time_since_last_flip_sec
+    - flips_in_last_60min
+    - bar_index_in_session_norm
+
+  diagnostics_only_features:
+    - mfe_H6_atr
+    - mfe_H10_atr
+    - mfe_H20_atr
+    - mfe_H30_atr
+    - mfe_H60_atr
+    - mfe_H120_atr
+    - mfe_H240_atr
+    - snap_H6_K0_5
+    - snap_H6_K0_75
+    - snap_H6_K1_0
+    - snap_H10_K0_5
+    - snap_H10_K0_75
+    - snap_H10_K1_0
+    - snap_H20_K0_5
+    - snap_H20_K0_75
+    - snap_H20_K1_0
+    - snap_H30_K0_5
+    - snap_H30_K0_75
+    - snap_H30_K1_0
+    - snap_H60_K0_5
+    - snap_H60_K0_75
+    - snap_H60_K1_0
+    - snap_H120_K0_5
+    - snap_H120_K0_75
+    - snap_H120_K1_0
+    - snap_H240_K0_5
+    - snap_H240_K0_75
+    - snap_H240_K1_0
+    - barrier_y_H30_R3p0_sl0p5
+    - shock_intensity_z_fullsample_decile
+    - div_score_fullsample_decile
+    - rel_vol_fullsample_decile
+
+train:
+  train_start: "2024-01-01"
+  train_end: "2024-12-31"
+  oos_start: "2025-01-01"
+  oos_end: "2025-12-31"
+
+model:
+  type: "hgb"
+  params:
+    max_depth: 6
+    max_iter: 500
+    learning_rate: 0.05
+    min_samples_leaf: 30
+    l2_regularization: 0.1
+    validation_fraction: 0.1
+    n_iter_no_change: 10
+    random_state: 42
+
+eval:
+  prob_thresholds:
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6

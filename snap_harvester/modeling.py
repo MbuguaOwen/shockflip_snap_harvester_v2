@@ -18,6 +18,9 @@ def build_feature_matrix(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     mfe_col = meta_cfg.get("mfe_col", "mfe_r")
     mae_col = meta_cfg.get("mae_col", "mae_r")
 
+    train_features = meta_cfg.get("train_features", None)
+    diagnostics_only = set(meta_cfg.get("diagnostics_only_features", []))
+
     exclude = set(meta_cfg.get("exclude_feature_cols", []))
     exclude.update(
         {
@@ -29,6 +32,24 @@ def build_feature_matrix(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             "p_hat",
         }
     )
+    # Never leak diagnostics into the model
+    exclude.update(diagnostics_only)
+
+    if train_features:
+        # Explicit feature whitelist: keep order, fill missing with zeros
+        feats = {}
+        for col in train_features:
+            if col in df.columns:
+                series = df[col]
+                if not is_numeric_dtype(series):
+                    series = pd.to_numeric(series, errors="coerce")
+                feats[col] = series
+            else:
+                feats[col] = pd.Series(0.0, index=df.index)
+
+        X = pd.DataFrame(feats, index=df.index)
+        X = X.astype("float32").fillna(0.0)
+        return X
 
     numeric_cols = []
     cat_cols = []

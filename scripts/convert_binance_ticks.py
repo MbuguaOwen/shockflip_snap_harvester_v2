@@ -56,10 +56,12 @@ def _clean_chunk(chunk: pd.DataFrame, tick_size: float | None = None) -> pd.Data
         .fillna(0)
         .astype("int8")
     )
+    # Drop rows that failed numeric coercion before computing ticks
+    out = out.dropna(subset=["timestamp", "price", "qty"])
     if tick_size is not None:
         out["tick"] = out["price"].apply(lambda p: price_to_tick(p, tick_size))
         out["price"] = out["tick"].apply(lambda t: tick_to_price(t, tick_size))
-    return out.dropna(subset=["timestamp", "price", "qty"])
+    return out
 
 
 def convert(
@@ -73,7 +75,14 @@ def convert(
     first = True
     total = 0
 
-    for chunk in pd.read_csv(in_path, header=None, names=cols, chunksize=chunksize):
+    for chunk in pd.read_csv(
+        in_path,
+        header=None,
+        names=cols,
+        chunksize=chunksize,
+        dtype=str,  # keep as strings so we can coerce cleanly
+        low_memory=False,
+    ):
         cleaned = _clean_chunk(chunk, tick_size=tick_size)
         cleaned.to_csv(out_path, mode="w" if first else "a", header=first, index=False)
         total += len(cleaned)

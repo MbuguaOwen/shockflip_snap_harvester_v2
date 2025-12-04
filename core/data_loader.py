@@ -29,12 +29,26 @@ def _load_single_tick_csv(path: str) -> pd.DataFrame:
     """
     Load a single tick CSV and normalize columns safely.
     Handles various column name formats (Binance, generic, etc.).
+    If the fast C-engine parser fails (e.g., malformed rows), fall back to a
+    slower parser that skips bad lines instead of aborting the whole file.
     """
     try:
         df = pd.read_csv(path)
     except Exception as e:
-        print(f"Error reading {path}: {e}")
-        return pd.DataFrame()
+        print(f"Error reading {path} with default parser: {e}")
+        try:
+            df = pd.read_csv(
+                path,
+                engine="python",
+                on_bad_lines="skip",
+            )
+            print(f"[Warning] Retried {path} with on_bad_lines='skip'; shape={df.shape}")
+        except Exception as e2:
+            print(f"Error reading {path} with fallback parser: {e2}")
+            return pd.DataFrame()
+
+    if df.empty:
+        return df
 
     cols = {c.lower(): c for c in df.columns}
 
@@ -46,7 +60,6 @@ def _load_single_tick_csv(path: str) -> pd.DataFrame:
     elif "time" in cols:
         df = df.rename(columns={cols["time"]: "ts"})
     else:
-        # Skip file if critical columns missing
         return pd.DataFrame()
 
     # 2. Price -> 'price'
@@ -76,20 +89,19 @@ def _load_single_tick_csv(path: str) -> pd.DataFrame:
     if "is_buyer_maker" not in df.columns:
         return pd.DataFrame()
 
-    # 5. Timestamp Normalization
+    # 5. Timestamp normalization (auto-detect ms/us/ns)
     ts = df["ts"]
     is_numeric = False
     try:
         is_numeric = pd.api.types.is_numeric_dtype(ts)
-    except:
+    except Exception:
         is_numeric = ts.dtype.kind in ("i", "u", "f")
 
     if is_numeric:
-        # Detect time unit: ms (~1e12) vs us (~1e15) vs ns (~1e18)
         max_ts = pd.to_numeric(ts, errors="coerce").dropna().max()
         unit = "ms"
         if pd.notnull(max_ts):
-            if max_ts > 1e14 and max_ts < 1e17:
+            if 1e14 < max_ts < 1e17:
                 unit = "us"
             elif max_ts >= 1e17:
                 unit = "ns"
@@ -99,7 +111,7 @@ def _load_single_tick_csv(path: str) -> pd.DataFrame:
 
     df = df.dropna(subset=["ts"])
 
-    # 6. Bool Normalization
+    # 6. Bool normalization
     if df["is_buyer_maker"].dtype != bool:
         if df["is_buyer_maker"].dtype == object:
             s = df["is_buyer_maker"].astype(str).str.strip().str.lower()

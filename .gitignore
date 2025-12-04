@@ -39,3 +39,4 @@ env.bak/
 !/results/models/**
 !/results/.gitkeep
 /raw/
+/data/

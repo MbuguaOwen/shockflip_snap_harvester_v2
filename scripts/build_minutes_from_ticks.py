@@ -91,12 +91,30 @@ def _aggregate_file(
         # (e.g., corrupt timestamps) are dropped instead of aborting the job.
         ts_num = pd.to_numeric(ts, errors="coerce")
         if ts_num.notna().any():
+            # 1) Keep rows with numeric timestamps
             mask = ts_num.notna()
             valid = ts_num[mask].astype("int64")
-            parsed = pd.to_datetime(valid, unit=unit, utc=True, errors="coerce")
+
+            # 2) Pick an appropriate timestamp unit (respect override, but fall back to inferred if it mismatches)
+            derived_unit = unit
+            inferred_unit = infer_timestamp_unit_from_values(valid)
+            if unit == "infer":
+                derived_unit = inferred_unit
+            elif inferred_unit != unit:
+                logger.warning(
+                    "%s::timestamp: unit override '%s' looks like '%s' based on data; using inferred '%s'",
+                    path,
+                    unit,
+                    inferred_unit,
+                    inferred_unit,
+                )
+                derived_unit = inferred_unit
+
+            # 3) Parse numeric timestamps to datetime
+            parsed = pd.to_datetime(valid, unit=derived_unit, utc=True, errors="coerce")
             bad_parsed = parsed.isna()
             if bad_parsed.any():
-                # Drop rows where even numeric->datetime failed
+                # Build a full-length mask of rows whose numeric->datetime conversion failed
                 bad_mask = mask.copy()
                 bad_mask[mask] = bad_parsed.values
                 logger.warning(
@@ -105,13 +123,18 @@ def _aggregate_file(
                     int(bad_mask.sum()),
                     ts[bad_mask].head(3).tolist(),
                 )
-                mask = mask & (~bad_parsed.values)
+                # Use bad_mask (aligned to original chunk) to filter
+                mask = mask & (~bad_mask)
                 parsed = parsed[~bad_parsed]
                 if not mask.any():
                     continue
-            # Align parsed back to filtered chunk
+
+            # Align parsed back to filtered chunk (lengths now match)
             chunk = chunk.loc[mask].copy()
-            chunk.loc[:, "timestamp"] = parsed.values
+            # Drop the original timestamp column to avoid dtype upcast warnings, then attach parsed datetimes
+            chunk = chunk.drop(columns=["timestamp"]).assign(
+                timestamp=pd.Series(parsed.values, index=chunk.index)
+            )
         else:
             parsed = pd.to_datetime(ts, utc=True, errors="coerce")
             bad = parsed.isna()
