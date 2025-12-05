@@ -27,8 +27,10 @@ EPS = 1e-9
 DEFAULT_HORIZONS = [6, 10, 20, 30, 60, 120, 240]
 SNAP_THRESHOLDS_ATR = [0.5, 0.75, 1.0]
 # Barrier label specs: list of (horizon, tp_r, sl_r)
-# Current choice: 30-bar horizon, TP = +4.0R, SL = -2.5R (TP wins ties)
-BARRIER_SPECS = [(30, 4.0, 2.5)]
+# Snap v2 (agg-based): 30-bar horizon, TP = +4.0R, SL = -2.5R (TP wins ties)
+BARRIER_SPECS = [
+    (30, 4.0, 2.5),  # barrier_y_H30_R4p0_sl2p5
+]
 MIN_BARS_DEFAULT = 240
 Z_WINDOW_DEFAULT = 240
 DONCHIAN_WINDOW_DEFAULT = 120

@@ -42,6 +42,7 @@ def main() -> None:
 
     # Build features + labels
     X = build_feature_matrix(df, cfg)
+    logger.info("Train features (%d): %s", X.shape[1], list(X.columns))
     y_col = meta_cfg["label_col"]
     y = df[y_col].astype(int).values
 

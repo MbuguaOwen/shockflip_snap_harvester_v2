@@ -364,4 +364,6 @@ def build_meta_dataset(cfg: dict, logger: logging.Logger | None = None) -> pd.Da
         out_rows.append(row)
 
     meta_df = pd.DataFrame(out_rows)
+    if r_col in meta_df.columns:
+        meta_df["y_win_R4_SL2p5"] = (meta_df[r_col] > 0).astype(int)
     return meta_df

@@ -7,7 +7,7 @@ data:
     - "BTCUSDT"
 
   # Minutes derived from aggTrades ticks (v2)
-  bars_path_template: "data/minutes_agg/{symbol}_1min_2025-*.parquet"
+  bars_path_template: "data/minutes_agg/{symbol}_1min_2025.parquet"
   bars_time_col: "timestamp"
   bars_open_col: "open"
   bars_high_col: "high"
@@ -15,7 +15,7 @@ data:
   bars_close_col: "close"
 
   # Events produced by Diamond Hunter on agg ticks
-  events_path: "results/diamond_hunter_btc_agg_2025_*/events_annotated.csv"
+  events_path: "results/diamond_hunter_btc_agg_2025_all/events_annotated.csv"
   events_time_col: "timestamp"
   events_symbol_col: "symbol"
   events_side_col: "side"
@@ -60,10 +60,11 @@ risk:
   target_r_multiple: 4.0
 
 meta:
-  label_col: "y_swing_1p5"
+  label_col: "y_win_R4_SL2p5"
   r_multiple_col: "r_final"
   mfe_col: "mfe_r"
   mae_col: "mae_r"
+  barrier_col: "barrier_y_H30_R4p0_sl2p5"
   exclude_feature_cols:
     - "event_id"
     - "event_bar_time"
@@ -79,35 +80,29 @@ meta:
   # v2 live-safe feature list (aggTrades world)
   train_features:
     - side
+    - open
+    - high
+    - low
     - close
-    - range_atr
     - atr
     - atr_pct
-    - donchian_loc
+    - rel_vol
+    - imbalance
     - imbalance_z
     - shockflip_z
     - shock_intensity_z
-    - rel_vol
+    - range_atr
+    - donchian_loc
     - price_flow_div
     - prior_flow_sign
     - div_score
     - trend_dir
     - trend_aligned
-    - trend_slope_fast
-    - trend_slope_slow
-    - trend_slope_ratio
-    - flow_signed_vol_5
-    - flow_signed_vol_20
-    - flow_accel_5_20
-    - rel_vol_trend_10
-    - shock_intensity_trend_10
-    - imbalance_z_delta_5
+    - trend_slope
     - stall_flag
-    - preflip_range_atr
-    - preflip_rel_vol
-    - time_since_last_flip_sec
-    - flips_in_last_60min
-    - bar_index_in_session_norm
+    - shock_intensity_z_decile
+    - div_score_decile
+    - rel_vol_decile
 
   diagnostics_only_features:
     - mfe_H6_atr

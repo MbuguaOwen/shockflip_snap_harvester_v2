@@ -13,6 +13,12 @@ python scripts/run_barrier_event_study.py \
   --horizons 6,10,20,30,60,120,240 \
   --tp_grid 1.5,2.0,2.5,3.0,4.0 \
   --sl_grid 0.25,0.5,0.75,1.0
+
+Wide grid example:
+python scripts/run_barrier_event_study.py \
+  --config configs/snap_harvester_2024_btc_agg.yaml \
+  --symbol BTCUSDT \
+  --grid_preset wide
 """
 
 from __future__ import annotations
@@ -20,14 +26,26 @@ from __future__ import annotations
 import argparse
 import itertools
 from pathlib import Path
+import sys
 from typing import Iterable, List, Tuple
 
 import numpy as np
 import pandas as pd
 
+# Allow running the script directly from the repo root by adding project root to sys.path
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from snap_harvester.config import load_config
 
 EPS = 1e-9
+DEFAULT_TP_GRID = [1.5, 2.0, 2.5, 3.0, 4.0]
+DEFAULT_SL_GRID = [0.25, 0.5, 0.75, 1.0]
+WIDE_TP_GRID = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]
+WIDE_SL_GRID = [0.1, 0.2, 0.25, 0.35, 0.5, 0.65, 0.75, 0.9, 1.0, 1.25, 1.5, 2.0]
+DEFAULT_TP_GRID_STR = ",".join(str(x) for x in DEFAULT_TP_GRID)
+DEFAULT_SL_GRID_STR = ",".join(str(x) for x in DEFAULT_SL_GRID)
 
 
 def _parse_floats(csv_list: str) -> List[float]:
@@ -253,8 +271,14 @@ def main() -> None:
     ap.add_argument("--config", required=True, help="Path to agg config (YAML).")
     ap.add_argument("--symbol", default=None, help="Symbol override (defaults to first in config).")
     ap.add_argument("--horizons", default="6,10,20,30,60,120,240", help="Comma list of horizons (bars).")
-    ap.add_argument("--tp_grid", default="1.5,2.0,2.5,3.0,4.0", help="Comma list of TP in R.")
-    ap.add_argument("--sl_grid", default="0.25,0.5,0.75,1.0", help="Comma list of SL in R.")
+    ap.add_argument("--tp_grid", default=DEFAULT_TP_GRID_STR, help="Comma list of TP in R.")
+    ap.add_argument("--sl_grid", default=DEFAULT_SL_GRID_STR, help="Comma list of SL in R.")
+    ap.add_argument(
+        "--grid_preset",
+        choices=["standard", "wide"],
+        default="standard",
+        help="Preset grid to sweep. 'wide' runs a dense TP/SL grid and overrides --tp_grid/--sl_grid.",
+    )
     ap.add_argument(
         "--out_event_study",
         default="results/event_study/snap_mfe_mae_2024_BTC_agg.parquet",
@@ -270,8 +294,13 @@ def main() -> None:
     cfg = load_config(args.config)
     symbol = args.symbol or cfg["data"]["symbols"][0]
     horizons = _parse_ints(args.horizons)
-    tp_grid = _parse_floats(args.tp_grid)
-    sl_grid = _parse_floats(args.sl_grid)
+    grid_preset = args.grid_preset.lower()
+    if grid_preset == "wide":
+        tp_grid = WIDE_TP_GRID
+        sl_grid = WIDE_SL_GRID
+    else:
+        tp_grid = _parse_floats(args.tp_grid)
+        sl_grid = _parse_floats(args.sl_grid)
 
     price_col = cfg["data"]["bars_close_col"]
     atr_col = cfg["data"]["events_atr_col"]
@@ -283,6 +312,7 @@ def main() -> None:
     print(f"[Load] events for {symbol} ...")
     events = load_events(cfg, symbol)
 
+    print(f"[Grid] preset={grid_preset} | TP={tp_grid} | SL={sl_grid}")
     print(f"[Event Study] computing MFE/MAE for horizons={horizons} ...")
     event_study = compute_event_study(
         events=events,

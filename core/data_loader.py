@@ -1,5 +1,6 @@
 import os
 import sys
+import numpy as np
 import pandas as pd
 from typing import List, Generator, Tuple, Optional
 
@@ -32,16 +33,38 @@ def _load_single_tick_csv(path: str) -> pd.DataFrame:
     If the fast C-engine parser fails (e.g., malformed rows), fall back to a
     slower parser that skips bad lines instead of aborting the whole file.
     """
+    # Optimized for aggTrades-derived ticks: timestamp,price,qty,is_buyer_maker
+    usecols = ["timestamp", "price", "qty", "is_buyer_maker"]
+    dtype = {
+        "timestamp": "int64",
+        "price": "float64",
+        "qty": "float64",
+        "is_buyer_maker": "int8",
+    }
+
     try:
-        df = pd.read_csv(path)
+        chunks = pd.read_csv(
+            path,
+            usecols=usecols,
+            dtype=dtype,
+            low_memory=False,
+            engine="c",
+            memory_map=True,
+            chunksize=5_000_000,
+        )
+        df = pd.concat(chunks, ignore_index=True)
     except Exception as e:
-        print(f"Error reading {path} with default parser: {e}")
+        print(f"Error reading {path} with optimized parser: {e}")
         try:
-            df = pd.read_csv(
+            chunks = pd.read_csv(
                 path,
                 engine="python",
                 on_bad_lines="skip",
+                usecols=usecols,
+                dtype=dtype,
+                chunksize=1_000_000,
             )
+            df = pd.concat(chunks, ignore_index=True)
             print(f"[Warning] Retried {path} with on_bad_lines='skip'; shape={df.shape}")
         except Exception as e2:
             print(f"Error reading {path} with fallback parser: {e2}")
@@ -50,68 +73,26 @@ def _load_single_tick_csv(path: str) -> pd.DataFrame:
     if df.empty:
         return df
 
-    cols = {c.lower(): c for c in df.columns}
-
-    # 1. Timestamp -> 'ts'
-    if "ts" in df.columns:
-        pass
-    elif "timestamp" in cols:
-        df = df.rename(columns={cols["timestamp"]: "ts"})
-    elif "time" in cols:
-        df = df.rename(columns={cols["time"]: "ts"})
-    else:
+    # Timestamp normalization (auto-detect unit)
+    ts_raw = df["timestamp"]
+    ts_numeric = pd.to_numeric(ts_raw, errors="coerce").dropna()
+    if ts_numeric.empty:
         return pd.DataFrame()
 
-    # 2. Price -> 'price'
-    if "price" not in cols:
-        for alt in ("p", "last_price", "close", "trade_price"):
-            if alt in cols:
-                df = df.rename(columns={cols[alt]: "price"})
-                break
-    if "price" not in df.columns:
-        return pd.DataFrame()
+    max_ts = ts_numeric.max()
+    unit = "ms"
+    if 1e14 < max_ts < 1e17:
+        unit = "us"
+    elif max_ts >= 1e17:
+        unit = "ns"
 
-    # 3. Qty -> 'qty'
-    if "qty" not in cols:
-        for alt in ("quantity", "size", "amount", "vol", "volume"):
-            if alt in cols:
-                df = df.rename(columns={cols[alt]: "qty"})
-                break
-    if "qty" not in df.columns:
-        return pd.DataFrame()
-
-    # 4. Buyer Maker -> 'is_buyer_maker'
-    if "is_buyer_maker" not in df.columns:
-        for alt in ("isbuyermaker", "buyer_is_maker", "is_buyer_mkt_maker", "is_buyer_maker"):
-            if alt in cols:
-                df = df.rename(columns={cols[alt]: "is_buyer_maker"})
-                break
-    if "is_buyer_maker" not in df.columns:
-        return pd.DataFrame()
-
-    # 5. Timestamp normalization (auto-detect ms/us/ns)
-    ts = df["ts"]
-    is_numeric = False
-    try:
-        is_numeric = pd.api.types.is_numeric_dtype(ts)
-    except Exception:
-        is_numeric = ts.dtype.kind in ("i", "u", "f")
-
-    if is_numeric:
-        max_ts = pd.to_numeric(ts, errors="coerce").dropna().max()
-        unit = "ms"
-        if pd.notnull(max_ts):
-            if 1e14 < max_ts < 1e17:
-                unit = "us"
-            elif max_ts >= 1e17:
-                unit = "ns"
-        df["ts"] = pd.to_datetime(ts.astype("int64"), unit=unit, utc=True, errors="coerce")
-    else:
-        df["ts"] = pd.to_datetime(ts, utc=True, errors="coerce")
-
+    df["ts"] = pd.to_datetime(ts_numeric.astype("int64"), unit=unit, utc=True, errors="coerce")
     df = df.dropna(subset=["ts"])
 
-    # 6. Bool normalization
+    # Canonical columns
+    df = df[["ts", "price", "qty", "is_buyer_maker"]].copy()
+
+    # Bool normalization
     if df["is_buyer_maker"].dtype != bool:
         if df["is_buyer_maker"].dtype == object:
             s = df["is_buyer_maker"].astype(str).str.strip().str.lower()
@@ -122,7 +103,9 @@ def _load_single_tick_csv(path: str) -> pd.DataFrame:
             num = pd.to_numeric(df["is_buyer_maker"], errors="coerce").fillna(0)
             df["is_buyer_maker"] = num.astype(int) != 0
 
-    return df
+    # Drop duplicates and sort
+    df = df.drop_duplicates(subset=["ts", "price", "qty", "is_buyer_maker"]).sort_values("ts")
+    return df.reset_index(drop=True)
 
 
 def resample_ticks_to_bars(
@@ -143,8 +126,11 @@ def resample_ticks_to_bars(
 
     df = ticks.copy()
     if resolved_tick is not None:
-        df["tick"] = df["price"].apply(lambda p: price_to_tick(p, resolved_tick))
-        df["price"] = df["tick"].apply(lambda t: tick_to_price(t, resolved_tick))
+        # Vectorized price -> tick -> price snap
+        price_arr = df["price"].to_numpy()
+        tick_arr = np.rint(price_arr / resolved_tick).astype("int64")
+        df["tick"] = tick_arr
+        df["price"] = tick_arr.astype("float64") * resolved_tick
 
     df = df.set_index("ts")
 
