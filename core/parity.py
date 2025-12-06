@@ -30,12 +30,20 @@ def _run_live_style_path(bars: pd.DataFrame, cfg: BacktestConfig, progress: bool
     For simplicity we still rely on the same feature and ShockFlip detector
     modules, but we iterate bar-by-bar to mimic a streaming engine.
     """
+    # Mirror the donchian window handling used in core.backtest.prepare_features_for_backtest
+    # (location_filter may be a dict rather than an attribute on ShockFlipConfig).
+    loc_filter = getattr(cfg.shockflip, "location_filter", None)
+    if isinstance(loc_filter, dict):
+        donchian_window = loc_filter.get("donchian_window", 120)
+    else:
+        donchian_window = getattr(cfg.shockflip, "donchian_window", 120)
+
     # Precompute features (causal) for all bars
     feats = add_core_features(
         bars,
         z_window=cfg.shockflip.z_window,
         atr_window=cfg.risk.atr_window,
-        donchian_window=cfg.shockflip.donchian_window,
+        donchian_window=donchian_window,
     )
     feats = detect_shockflip_signals(feats, cfg.shockflip)
 
@@ -52,7 +60,11 @@ def run_parity(
     cfg: BacktestConfig,
     progress: bool = True,
 ) -> Tuple[ParityReport, pd.DataFrame, pd.DataFrame]:
-    """Run research vs live-style paths and compare trade outputs."""
+    """Run research vs live-style paths and compare trade outputs.
+
+    Note: The live path mirrors the donchian_window logic from prepare_features_for_backtest
+    to avoid mismatches when ShockFlipConfig stores the window inside location_filter.
+    """
     # Propagate progress preference into the backtest helpers
     try:
         setattr(cfg, "_progress", progress)
